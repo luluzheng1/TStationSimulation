@@ -43,11 +43,11 @@ the_T.config_sim({"Alice" => ["Davis", "Kendall"],
                   "Dan" => ["Ruggles", "Aquarium", "East Sommerville"]
                  })
 
-# until the_T.finished?
-#   ["Alice", "Bob", "Carol", "Dan"].each { |p|
-#     the_T.step(:passenger, p)
-#   }
-#   ["red", "green", "blue", "orange"].each { |t|
-#     the_T.step(:train, t)
-#   }
-# end
+until the_T.finished?
+  ["Alice", "Bob", "Carol", "Dan"].each { |p|
+    the_T.step(:passenger, p)
+  }
+  ["red", "green", "blue", "orange"].each { |t|
+    the_T.step(:train, t)
+  }
+end

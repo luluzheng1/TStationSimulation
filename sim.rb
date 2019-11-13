@@ -20,6 +20,16 @@ class Transit
   def config_sim(paths)
     @paths = paths
     @passengers = initialize_passengers
+    # Plan each passenger's trip
+    passengers.each_with_index { |x, index|
+      s1 = paths[x.passenger].first
+      s2 = paths[x.passenger].last
+      p = plan(s1, s2)
+      c = color(plan(s1,s2))
+      x.set_plan(Hash[p.zip(c.map {|i| i.include?(',') ? (i.split /, /) : i})])
+      #still needs to account when passenger has more than 2 stops :<
+    }
+    
     i = 0
     @paths.each {|name, path|
       #find the station in the first index of path array
@@ -31,6 +41,19 @@ class Transit
         end
         }
     }
+  end
+
+  # Returns a array of the color of lines that correspond to the Passenger's path
+  def color(path)
+    color_array = Array.new
+    path[0...-1].each_with_index {|x, index|
+      lines_curr = Array.new
+      lines_next = Array.new
+      lines_curr = lines_at_station(x)
+      lines_next = lines_at_station(path[index+1])
+      color_array.push((lines_curr & lines_next).first)
+      }
+    return color_array
   end
 
   # Initializes stations object as a list of Stations in the transit system
@@ -111,19 +134,76 @@ class Transit
     progress = false
     if kind == :train
         curr_station = locate_train(name)
+
         index = station_index(curr_station, name)
-        next_station = lines[name][index+1]
+        #check if need to update rev
+        if curr_station.station == lines[name].last
+          puts "last stop!"
+          curr_station.train.set_rev(true)
+        end
+        if curr_station.station == lines[name].first
+          curr_station.train.set_rev(false)
+        end
+         
+        if curr_station.train.rev? == false
+          next_station = lines[name][index+1]
+        else
+          next_station = lines[name][index-1]
+        end
         stations.each {|station|
-          if station.to_s == next_station && station.train.nil?
+          if (station.to_s == next_station) && station.train.nil?
             station.set_train(curr_station.train)
             curr_station.remove_train
             progress = true
+            puts name + " currently at " + next_station #for debugging
             break
           end
           }
-        #still need to check if need to reverse direction 
+      if progress == false #just print statements for debugging 
+        puts name + " currently at " + curr_station.station.to_s
+        conflincting_train = (stations.select {|e| e.station == next_station}).first.train.to_s
+        puts "cannot advance, " + conflincting_train + " train at " + next_station 
+      end
     elsif kind == :passenger
-      puts "implement passenger"
+      person = nil
+      # find passenger object
+      passengers.each {|x|
+        if x.passenger == name
+          person = x
+        end
+      }
+      #iterate through stations
+      stations.each {|x|
+        if x.passengers.include? person
+          if !(x.train.nil?)
+            if x.train.get_train == person.plan[x.station]
+              x.train.add_passenger(person)
+              x.remove_passenger(person)
+              person.delete_pair(x.station)
+              progress = true
+              puts "passenger " + person.passenger + " boarding " + x.train.get_train + " train at " + x.station   
+            end
+          end
+        elsif !(x.train.nil?) 
+          if (x.train.passengers.include? person) && (person.plan.has_key?(x.station))
+            x.add_passenger(person)
+            x.train.remove_passenger(person)
+            if (person.plan)[x.station].nil?
+              person.delete_pair(x.station)
+            end
+            progress = true
+            puts "passenger " + person.passenger + " exitting " + x.train.get_train + " train at " + x.station
+          end
+        end
+      }
+      #if passenger at a station
+        # if there is a train at station and its the right train (use line array)
+          # board train (add passenger to train object, remove passenger from station object)
+      #else if passenger is on train at that station 
+        # if train is at a transfer station based on plan(s1, s2) (could potentially add as attribute to Passenger)
+          # exit train (add passenger to station object, remove passenger from train object)
+      #else 
+        # passenger makes no progress => progress = false
     else
       puts "Error, kind type not recognized."
     end
@@ -155,7 +235,7 @@ class Transit
   # Returns true if the simulation is complete (all passengers are at their)
   # final destinations), and otherwise it returns false. 
   def finished?
-    false
+    return passengers.all? {|x| x.plan.empty? }
   end
 
   #stations function!
@@ -202,14 +282,22 @@ class Transit
   # stations where a passenger going from s1 to s2 should board; change trains; 
   # and exit.
   def plan(s1, s2)
+    if s1 == s2
+      return []
+    end
     condensed_path = Array.new
     full_path = Array.new
     temp = BreadthFirstSearch.new(graph, find_node(s1)).shortest_path_to(find_node(s2))
     temp.each {|x| full_path.push(x.to_s)}
     condensed_path.push(full_path.first)
-    return condensed_path + transfer_stations(full_path)
+    condensed_path = condensed_path + transfer_stations(full_path)
+    if condensed_path.last != full_path.last #need to test this more
+      condensed_path << full_path.last
+    end
+  return condensed_path
   end
 
+        
   # Return an array of transfer stations given a path, includes the last stop
   # regardless of transfering 
   def transfer_stations(path)
@@ -220,8 +308,9 @@ class Transit
       lines_next = Array.new
       lines_curr = lines_at_station(x)
       lines_next = lines_at_station(path[index+1])
-      lines_path.push(lines_curr & lines_next)
+      lines_path.push((lines_curr & lines_next).first)
       }
+      #puts lines_path.inspect
     lines_path.each_with_index {|x, index|
       if (x != lines_path[index +1]) && (transfer.include? path[index +1])
         condensed_path.push(path[index+1])
@@ -253,6 +342,10 @@ class Station
     @station = station
     @train = nil
     @passengers = Array.new
+  end
+
+  def station
+    return @station
   end
 
   def add_passenger(passenger)
@@ -294,6 +387,16 @@ class Train
   def initialize(line)
     @train = line
     @passengers = Array.new
+    @rev = false
+  end
+
+  # Determines whether train needs to reverse directions
+  def rev?
+    return @rev
+  end
+
+  def set_rev(rev)
+    @rev = rev
   end
 
   # Adds a passenger object to the passenger array
@@ -323,9 +426,25 @@ end
 class Passenger
   def initialize(passenger)
     @passenger = passenger
+    @plan = Hash.new
   end
 
-  # returns the name of the passenger
+  def passenger
+    return @passenger
+  end
+
+  def plan
+    return @plan
+  end
+
+  def set_plan(plan)
+    @plan = plan
+  end
+
+  def delete_pair(key)
+    @plan.delete(key)
+  end
+
   def to_s
     return "#{@passenger}"
   end
