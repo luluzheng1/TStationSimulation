@@ -1,6 +1,6 @@
-# This is a simulation of the T. The four classes Passenger, Train, Station, and Trainsit
-# represent people riding the trains, the trains themselves, the stations, and the T system,
-# respectively.
+# This program is an implementation of a simulation of the T. The four classes Passenger, Train,
+# Station, and Trainsit represent people riding the trains, the trains themselves, the stations, 
+# and the T system, respectively.
 # I use BFS to determine the shortest path between two stations, given a starting station 
 # and destination station. Classes BreadthFirstSearch, Graph, and Node are dedicated to finding
 # the shortest path to get to any two stations. 
