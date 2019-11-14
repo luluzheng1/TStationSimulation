@@ -1,10 +1,12 @@
+require "set"
 # This program is an implementation of a simulation of the T. The four classes Passenger, Train,
 # Station, and Trainsit represent people riding the trains, the trains themselves, the stations, 
 # and the T system, respectively.
 # I use BFS to determine the shortest path between two stations, given a starting station 
-# and destination station. Classes BreadthFirstSearch, Graph, and Node are dedicated to finding
+# and destination station. Classes BFS, Graph, and Node are dedicated to finding
 # the shortest path to get to any two stations. 
 # Class Log exists for debugging purposes. 
+
 class Transit
   # Initialization functions
 
@@ -27,6 +29,7 @@ class Transit
   def config_sim(paths)
     @paths = paths
     @passengers = initialize_passengers
+
     # Plan each passenger's trip
     passengers.each_with_index { |x, index|
       s1 = paths[x.passenger].first
@@ -34,7 +37,7 @@ class Transit
       p = plan(s1, s2)
       c = color(plan(s1,s2))
       x.set_plan(Hash[p.zip(c.map {|i| i.include?(',') ? (i.split /, /) : i})])
-      #still needs to account when passenger has more than 2 stops :<
+      # when passenger has more than 2 stops?
     }
     
     i = 0
@@ -50,23 +53,11 @@ class Transit
     }
   end
 
-  # Returns a array of the color of lines that correspond to the Passenger's path
-  def color(path)
-    color_array = Array.new
-    path[0...-1].each_with_index {|x, index|
-      lines_curr = Array.new
-      lines_next = Array.new
-      lines_curr = lines_at_station(x)
-      lines_next = lines_at_station(path[index+1])
-      color_array.push((lines_curr & lines_next).first)
-      }
-    return color_array
-  end
-
   # Initializes stations object as a list of Stations in the transit system
   def initialize_stations
     @stations = Array.new
     i = 0
+
     @lines.each {|line, stations|
       stations.each_with_index {|item, index|
         @stations.push(Station.new(item))
@@ -76,56 +67,75 @@ class Transit
         end
         }
     }
+
     @stations = @stations.uniq { |s| s.station.to_s}
   end
 
-  #Creates an array of transfer stations
+  # Creates an array of transfer stations
   def initialize_transfer
     @temp = Array.new
+
     @lines.each {|line, stations|
       stations.each_with_index {|item, index|
         @temp.push(item)
       }
     }
+
     return @temp.select {|e| @temp.count(e) > 1}.uniq
   end
 
   # Initialize trains object as a list of Trains in the transit system
   def initialize_trains
     @trains = Array.new
+
     @lines.each {|line, stations|
-      @trains.push(Train.new(line))}
+      @trains.push(Train.new(line))
+    }
+    
     return @trains
   end
 
   def initialize_passengers
     @passengers = Array.new
+
     @paths.each {|name, path|
-      @passengers.push(Passenger.new(name))}
+      @passengers.push(Passenger.new(name))
+    }
+
     return @passengers
   end
 
-  # Get Functions
-
-  # Returns a list of the Stations in the transit system
-  def stations
-    return @stations
+  # Creates a node for every unique station and stores the nodes in an array
+  def initialize_nodes
+    stations.each {|x|
+        node.push(Node.new(x.station))
+      }
   end
 
-  def trains
-    return @trains
+  # Creates a graph connecting a station to another station
+  def make_graph
+    lines.each {|line, stations|
+      stations.each_with_index {|x, index|
+        unless stations.at(index+1).nil?
+          graph.add_edge(find_node(x), find_node(stations.at(index+1)))
+        end
+      }
+    }
   end
 
-  def lines
-    return @lines
-  end
+  # Returns a array of the color of lines that correspond to the Passenger's path
+  def color(path)
+    color_array = Array.new
 
-  def paths
-    return @paths
-  end
+    path[0...-1].each_with_index {|x, index|
+      lines_curr = Array.new
+      lines_next = Array.new
+      lines_curr = lines_at_station(x)
+      lines_next = lines_at_station(path[index+1])
+      color_array.push((lines_curr & lines_next).first)
+      }
 
-  def passengers
-    return @passengers
+    return color_array
   end
 
   # Runs one step of simulation, depending on the arguments
@@ -145,7 +155,6 @@ class Transit
         index = station_index(curr_station, name)
         #check if need to update rev
         if curr_station.station == lines[name].last
-          puts "last stop!"
           curr_station.train.set_rev(true)
         end
         if curr_station.station == lines[name].first
@@ -157,29 +166,30 @@ class Transit
         else
           next_station = lines[name][index-1]
         end
+
         stations.each {|station|
           if (station.to_s == next_station) && station.train.nil?
             station.set_train(curr_station.train)
             curr_station.remove_train
             progress = true
-            puts name + " currently at " + next_station #for debugging
+            Log.train_moves(name, curr_station.station, next_station)
             break
           end
           }
-      if progress == false #just print statements for debugging 
-        puts name + " currently at " + curr_station.station.to_s
+
+      if progress == false 
         conflincting_train = (stations.select {|e| e.station == next_station}).first.train.to_s
-        puts "cannot advance, " + conflincting_train + " train at " + next_station 
-      end
+        puts "Train " + curr_station.train.get_train + " cannot advance, " + conflincting_train + " train at " + next_station 
+      end 
     elsif kind == :passenger
       person = nil
-      # find passenger object
+      # Find passenger object
       passengers.each {|x|
         if x.passenger == name
           person = x
         end
       }
-      #iterate through stations
+
       stations.each {|x|
         if x.passengers.include? person
           if !(x.train.nil?)
@@ -188,7 +198,7 @@ class Transit
               x.remove_passenger(person)
               person.delete_pair(x.station)
               progress = true
-              puts "passenger " + person.passenger + " boarding " + x.train.get_train + " train at " + x.station   
+              Log.passenger_boards(person.passenger,x.train.get_train,x.station) 
             end
           end
         elsif !(x.train.nil?) 
@@ -199,21 +209,14 @@ class Transit
               person.delete_pair(x.station)
             end
             progress = true
-            puts "passenger " + person.passenger + " exitting " + x.train.get_train + " train at " + x.station
+            Log.passenger_exits(person.passenger, x.train.get_train, x.station)
           end
         end
       }
-      #if passenger at a station
-        # if there is a train at station and its the right train (use line array)
-          # board train (add passenger to train object, remove passenger from station object)
-      #else if passenger is on train at that station 
-        # if train is at a transfer station based on plan(s1, s2) (could potentially add as attribute to Passenger)
-          # exit train (add passenger to station object, remove passenger from train object)
-      #else 
-        # passenger makes no progress => progress = false
     else
       puts "Error, kind type not recognized."
     end
+
     return progress
   end
     
@@ -245,7 +248,29 @@ class Transit
     return passengers.all? {|x| x.plan.empty? }
   end
 
-  #stations function!
+  # Get Functions
+
+  # Returns a list of the Stations in the transit system
+  def stations
+    return @stations
+  end
+
+  def trains
+    return @trains
+  end
+
+  def lines
+    return @lines
+  end
+
+  def paths
+    return @paths
+  end
+
+  def passengers
+    return @passengers
+  end
+
   def transfer
     return @transfer
   end
@@ -257,31 +282,12 @@ class Transit
   def graph
     return @graph
   end
-  # Creates a node for every unique station and stores the nodes in an array
-  def initialize_nodes
-    stations.each {|x|
-        node.push(Node.new(x.station))
-      }
-    node.inspect 
-  end
 
   def find_node(name)
     node.each{|x|
       if x.name == name
         return x
       end
-    }
-  end
-
-  # Creates a graph connecting a station to another station
-  def make_graph
-    lines.each {|line, stations|
-      stations.each_with_index {|x, index|
-        unless stations.at(index+1).nil?
-          #puts "adding edge between" + x.inspect + "and " + stations.at(index+1).inspect
-          graph.add_edge(find_node(x), find_node(stations.at(index+1)))
-        end
-      }
     }
   end
   
@@ -292,15 +298,19 @@ class Transit
     if s1 == s2
       return []
     end
+
     condensed_path = Array.new
     full_path = Array.new
-    temp = BreadthFirstSearch.new(graph, find_node(s1)).shortest_path_to(find_node(s2))
+    temp = BFS.new(graph, find_node(s1)).shortest_path_to(find_node(s2))
+
     temp.each {|x| full_path.push(x.to_s)}
     condensed_path.push(full_path.first)
     condensed_path = condensed_path + transfer_stations(full_path)
+    
     if condensed_path.last != full_path.last #need to test this more
       condensed_path << full_path.last
     end
+
   return condensed_path
   end
 
@@ -310,6 +320,7 @@ class Transit
   def transfer_stations(path)
     lines_path = Array.new
     condensed_path = Array.new
+
     path[0...-1].each_with_index {|x, index|
       lines_curr = Array.new
       lines_next = Array.new
@@ -317,18 +328,20 @@ class Transit
       lines_next = lines_at_station(path[index+1])
       lines_path.push((lines_curr & lines_next).first)
       }
-      #puts lines_path.inspect
+
     lines_path.each_with_index {|x, index|
       if (x != lines_path[index +1]) && (transfer.include? path[index +1])
         condensed_path.push(path[index+1])
       end
     }
+
     return condensed_path
   end
 
   # Returns an array of lines the station is on
   def lines_at_station(station)
     line_array = Array.new
+
     lines.each {|lines, stations|
       stations.each {|x| 
         if x == station
@@ -336,6 +349,7 @@ class Transit
         end 
       } 
     }
+
     return line_array
   end
 end
@@ -349,10 +363,6 @@ class Station
     @station = station
     @train = nil
     @passengers = Array.new
-  end
-
-  def station
-    return @station
   end
 
   def add_passenger(passenger)
@@ -370,6 +380,10 @@ class Station
 
   def remove_train
     @train = nil
+  end
+
+  def station
+    return @station
   end
 
   # Returns a list (array) of Passenger objects currently at the station
@@ -390,23 +404,18 @@ class Station
 end
 
 class Train
-  #passengers is a list of Passenger objects currently on the train
+  # Passengers is a list of Passenger objects currently on the train
   def initialize(line)
     @train = line
     @passengers = Array.new
     @rev = false
   end
 
-  # Determines whether train needs to reverse directions
-  def rev?
-    return @rev
+  def get_train
+    return @train
   end
 
-  def set_rev(rev)
-    @rev = rev
-  end
-
-  # Adds a passenger object to the passenger array
+ # Adds a passenger object to the passenger array
   def add_passenger(passenger)
     @passengers.push(passenger)
   end
@@ -420,13 +429,18 @@ class Train
     return @passengers
   end
 
+  # Determines whether train needs to reverse directions
+  def rev?
+    return @rev
+  end
+
+  def set_rev(rev)
+    @rev = rev
+  end
+
   # Returns the name of the line the train is running on
   def to_s
     return "#{@train}"
-  end
-
-  def get_train
-    return @train
   end
 end
 
@@ -471,19 +485,12 @@ class Log
   end
 end
 
-# Put unvisited nodes on a queue
-# Solves the shortest path problem: Find path from "source" to "target"
-# that uses the fewest number of edges
-# It's not recursive (like depth first search)
-#
-# The steps are quite simple:
-# * Put s into a FIFO queue and mark it as visited
-# * Repeat until the queue is empty:
-#   - Remove the least recently added node n
-#   - add each of n's unvisited adjacents to the queue and
-#     mark them as visited
-
-class BreadthFirstSearch
+# Class BFS uses a queue to find the shortest path from source node to
+# target node using the fewest number of edges. BFS puts an unvisited 
+# node in a queue and mark it as visited and repeatedly remove the least
+# recently added node n and add each of n's unvisited adjacents to the 
+# queue and mark them as visited.  
+class BFS
   def initialize(graph, source_node)
     @graph = graph
     @node = source_node
@@ -498,7 +505,7 @@ class BreadthFirstSearch
     path = []
 
     while(node != @node) do
-      path.unshift(node) # unshift adds the node to the beginning of the array
+      path.unshift(node) # Add node to start of array
       node = @edge_to[node]
     end
 
@@ -507,21 +514,12 @@ class BreadthFirstSearch
 
   private
   def bfs(node)
-    # Remember, in the breadth first search we always
-    # use a queue. In ruby we can represent both
-    # queues and stacks as an Array, just by using
-    # the correct methods to deal with it. In this case,
-    # we use the "shift" method to remove an element
-    # from the beginning of the Array.
+    # Shift removes an element from beginning of Array.
 
-    # First step: Put the source node into a queue and mark it as visited
     queue = []
     queue << node
     @visited << node
 
-    # Second step: Repeat until the queue is empty:
-    # - Remove the least recently added node n
-    # - add each of n's unvisited adjacents to the queue and mark them as visited
     while queue.any?
       current_node = queue.shift # remove first element
       current_node.adjacents.each do |adjacent_node|
@@ -533,34 +531,27 @@ class BreadthFirstSearch
     end
   end
 
-  # If we visited the node, so there is a path
-  # from our source node to it.
   def has_path_to?(node)
     @visited.include?(node)
   end
 end
 
+# For each pair of adjacent stations, Graph creates a connection
+# between the two stations
 class Graph
 
-  # We are dealing with an undirected graph,
-  # so I increment the "adjacents" in both sides.
-  # The breadth first will work the same way with
-  # a directed graph.
   def add_edge(node_a, node_b)
     node_a.adjacents << node_b
     node_b.adjacents << node_a
   end
 end
 
-require "set"
-
+# For each station, Node creates a node that stores the station's
+# neighboring stations
 class Node
   attr_accessor :name, :adjacents
 
   def initialize(name)
-    # I'm using a Set instead of an Array to
-    # avoid duplications. We don't want node1
-    # connected to node2 twice.
     @adjacents = Set.new
     @name = name
   end
